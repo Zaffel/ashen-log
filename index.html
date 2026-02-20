@@ -77,93 +77,146 @@ if ('serviceWorker' in navigator) {
 }
 
 let items = JSON.parse(localStorage.getItem("ashenLogItems") || "[]");
+
 const status = document.getElementById("status");
 
-function save() {
-    localStorage.setItem("ashenLogItems", JSON.stringify(items));
+// --- Error Display ---
+const errorBox = document.createElement("div");
+errorBox.style.background = "#330000";
+errorBox.style.color = "#ff6666";
+errorBox.style.padding = "8px";
+errorBox.style.marginTop = "6px";
+errorBox.style.display = "none";
+errorBox.style.whiteSpace = "pre-wrap";
+document.querySelector(".controls").appendChild(errorBox);
+
+function showError(msg) {
+    errorBox.style.display = "block";
+    errorBox.textContent = "ERROR:\n" + msg;
 }
 
+function clearError() {
+    errorBox.style.display = "none";
+    errorBox.textContent = "";
+}
+
+// --- Status ---
 function setStatus(msg) {
     status.textContent = msg;
 }
 
-function parseLog(text) {
-    const lines = text.split(/\r?\n/);
-    const parsed = [];
-    let currentItem = null;
-
-    for (let rawLine of lines) {
-        const line = rawLine.trim();
-        if (!line) continue;
-
-        // Skip id lines like:  id="abc123"
-        if (line.startsWith('id="')) continue;
-
-        // Match lines like: Item Name in Area:
-        const match = line.match(/^(.+?) in (.+?):$/);
-        if (match) {
-            currentItem = {
-                item: match[1].trim(),
-                area: match[2].trim(),
-                location: "",
-                replaces: "",
-                obtained: false,
-                reveal: false
-            };
-            continue;
-        }
-
-        // If we hit "Replaces", finalize the item
-        if (currentItem && line.startsWith("Replaces")) {
-            currentItem.replaces = line
-                .replace("Replaces", "")
-                .replace(".", "")
-                .trim();
-
-            parsed.push(currentItem);
-            currentItem = null;
-            continue;
-        }
-
-        // Otherwise accumulate location text
-        if (currentItem) {
-            currentItem.location += line + " ";
-        }
-    }
-
-    return parsed;
+// --- Save ---
+function save() {
+    localStorage.setItem("ashenLogItems", JSON.stringify(items));
 }
 
+// --- Parser ---
+function parseLog(text) {
+    try {
+        const lines = text.split(/\r?\n/);
+        const parsed = [];
+        let currentItem = null;
+
+        for (let rawLine of lines) {
+            const line = rawLine.trim();
+            if (!line) continue;
+
+            if (line.startsWith('id="')) continue;
+
+            const match = line.match(/^(.+?) in (.+?):$/);
+            if (match) {
+                currentItem = {
+                    item: match[1].trim(),
+                    area: match[2].trim(),
+                    location: "",
+                    replaces: "",
+                    obtained: false,
+                    reveal: false
+                };
+                continue;
+            }
+
+            if (currentItem && line.startsWith("Replaces")) {
+                currentItem.replaces = line
+                    .replace("Replaces", "")
+                    .replace(".", "")
+                    .trim();
+
+                parsed.push(currentItem);
+                currentItem = null;
+                continue;
+            }
+
+            if (currentItem) {
+                currentItem.location += line + " ";
+            }
+        }
+
+        return parsed;
+
+    } catch (err) {
+        showError("Parse failed:\n" + err.message);
+        return [];
+    }
+}
+
+// --- File Loader ---
 function loadFile(file) {
-    if (!file) return;
+    if (!file) {
+        showError("No file selected.");
+        return;
+    }
+
+    clearError();
     setStatus("Reading file...");
+
     const reader = new FileReader();
+
     reader.onload = function(e) {
-        setStatus("Parsing...");
-        setTimeout(() => {
-            items = parseLog(e.target.result);
+        try {
+            setStatus("Parsing log...");
+            const result = parseLog(e.target.result);
+
+            if (!result.length) {
+                showError("Parsing completed but 0 items were detected.\n\nThe log format may not match expected structure.");
+                setStatus("No items loaded.");
+                return;
+            }
+
+            items = result;
             save();
             render();
-            setStatus("Loaded " + items.length + " items");
-        }, 50);
+            setStatus("Loaded " + items.length + " items successfully.");
+        } catch (err) {
+            showError("Unexpected error:\n" + err.message);
+        }
     };
+
+    reader.onerror = function() {
+        showError("File could not be read.");
+    };
+
     reader.readAsText(file);
 }
 
+// --- Render ---
 function render() {
     const list = document.getElementById("list");
     const search = document.getElementById("search").value.toLowerCase();
     const areaFilter = document.getElementById("areaFilter").value;
+
     list.innerHTML = "";
     const areas = new Set();
 
     items.forEach((item, index) => {
         areas.add(item.area);
+
         if (search && !item.item.toLowerCase().includes(search)) return;
         if (areaFilter && item.area !== areaFilter) return;
 
         const div = document.createElement("div");
         div.className = "item" + (item.obtained ? " obtained" : "");
+
         div.innerHTML = `
             <div class="item-title">${item.item}</div>
             <div class="meta">${item.area}</div>
@@ -174,44 +227,16 @@ function render() {
             <button onclick="toggleReveal(${index})">Reveal</button>
             <button onclick="toggleObtained(${index})">Obtained</button>
         `;
+
         list.appendChild(div);
     });
 
     const select = document.getElementById("areaFilter");
     const currentValue = select.value;
     select.innerHTML = '<option value="">All Areas</option>';
+
     [...areas].sort().forEach(area => {
-        select.innerHTML += `<option value="${area}">${area}</option>`;
-    });
-    select.value = currentValue;
-}
-
-function toggleReveal(i) {
-    items[i].reveal = !items[i].reveal;
-    save();
-    render();
-}
-
-function toggleObtained(i) {
-    items[i].obtained = !items[i].obtained;
-    save();
-    render();
-}
-
-document.getElementById("fileInput").addEventListener("change", function() {
-    loadFile(this.files[0]);
-});
-document.getElementById("search").addEventListener("input", render);
-document.getElementById("areaFilter").addEventListener("change", render);
-document.getElementById("clearData").addEventListener("click", function() {
-    localStorage.removeItem("ashenLogItems");
-    items = [];
-    render();
-    setStatus("Cleared.");
-});
-
-render();
-</script>
+        select.innerHTML
 
 </body>
 </html>
