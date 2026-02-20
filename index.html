@@ -88,19 +88,23 @@ function setStatus(msg) {
 }
 
 function parseLog(text) {
-    const lines = text.split("\\n");
+    const lines = text.split(/\r?\n/);
     const parsed = [];
-    const worldRegex = /^(.+?) in (.+?):$/;
     let currentItem = null;
 
-    for (let line of lines) {
-        line = line.trim();
+    for (let rawLine of lines) {
+        const line = rawLine.trim();
+        if (!line) continue;
 
-        let match = line.match(worldRegex);
+        // Skip id lines like:  id="abc123"
+        if (line.startsWith('id="')) continue;
+
+        // Match lines like: Item Name in Area:
+        const match = line.match(/^(.+?) in (.+?):$/);
         if (match) {
             currentItem = {
-                item: match[1],
-                area: match[2],
+                item: match[1].trim(),
+                area: match[2].trim(),
                 location: "",
                 replaces: "",
                 obtained: false,
@@ -109,14 +113,20 @@ function parseLog(text) {
             continue;
         }
 
+        // If we hit "Replaces", finalize the item
         if (currentItem && line.startsWith("Replaces")) {
-            currentItem.replaces = line.replace("Replaces", "").replace(".", "").trim();
+            currentItem.replaces = line
+                .replace("Replaces", "")
+                .replace(".", "")
+                .trim();
+
             parsed.push(currentItem);
             currentItem = null;
             continue;
         }
 
-        if (currentItem && line.length > 0) {
+        // Otherwise accumulate location text
+        if (currentItem) {
             currentItem.location += line + " ";
         }
     }
