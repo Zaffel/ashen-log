@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ashen Log</title>
+<link rel="manifest" href="manifest.json">
+<style>
+body {
+    margin: 0;
+    background: #111;
+    color: #ddd;
+    font-family: serif;
+}
+header {
+    padding: 12px;
+    background: #1a1a1a;
+    font-size: 20px;
+    text-align: center;
+    border-bottom: 1px solid #333;
+}
+.controls {
+    padding: 10px;
+    background: #181818;
+}
+input, select, button {
+    width: 100%;
+    padding: 8px;
+    margin-top: 6px;
+    background: #222;
+    color: #ddd;
+    border: 1px solid #444;
+}
+.item {
+    padding: 10px;
+    border-bottom: 1px solid #222;
+}
+.item-title {
+    font-weight: bold;
+}
+.meta {
+    font-size: 12px;
+    color: #999;
+}
+.hidden {
+    display: none;
+}
+.obtained {
+    opacity: 0.4;
+}
+.status {
+    font-size: 13px;
+    color: #aaa;
+    margin-top: 6px;
+}
+</style>
+</head>
+<body>
+
+<header>Ashen Log</header>
+
+<div class="controls">
+    <input type="file" id="fileInput">
+    <input type="text" id="search" placeholder="Search items...">
+    <select id="areaFilter">
+        <option value="">All Areas</option>
+    </select>
+    <button id="clearData">Clear Saved Run</button>
+    <div id="status" class="status"></div>
+</div>
+
+<div id="list"></div>
+
+<script>
+if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('service-worker.js');
+}
+
+let items = JSON.parse(localStorage.getItem("ashenLogItems") || "[]");
+const status = document.getElementById("status");
+
+function save() {
+    localStorage.setItem("ashenLogItems", JSON.stringify(items));
+}
+
+function setStatus(msg) {
+    status.textContent = msg;
+}
+
+function parseLog(text) {
+    const lines = text.split("\\n");
+    const parsed = [];
+    const worldRegex = /^(.+?) in (.+?):$/;
+    let currentItem = null;
+
+    for (let line of lines) {
+        line = line.trim();
+
+        let match = line.match(worldRegex);
+        if (match) {
+            currentItem = {
+                item: match[1],
+                area: match[2],
+                location: "",
+                replaces: "",
+                obtained: false,
+                reveal: false
+            };
+            continue;
+        }
+
+        if (currentItem && line.startsWith("Replaces")) {
+            currentItem.replaces = line.replace("Replaces", "").replace(".", "").trim();
+            parsed.push(currentItem);
+            currentItem = null;
+            continue;
+        }
+
+        if (currentItem && line.length > 0) {
+            currentItem.location += line + " ";
+        }
+    }
+
+    return parsed;
+}
+
+function loadFile(file) {
+    if (!file) return;
+    setStatus("Reading file...");
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        setStatus("Parsing...");
+        setTimeout(() => {
+            items = parseLog(e.target.result);
+            save();
+            render();
+            setStatus("Loaded " + items.length + " items");
+        }, 50);
+    };
+    reader.readAsText(file);
+}
+
+function render() {
+    const list = document.getElementById("list");
+    const search = document.getElementById("search").value.toLowerCase();
+    const areaFilter = document.getElementById("areaFilter").value;
+    list.innerHTML = "";
+    const areas = new Set();
+
+    items.forEach((item, index) => {
+        areas.add(item.area);
+        if (search && !item.item.toLowerCase().includes(search)) return;
+        if (areaFilter && item.area !== areaFilter) return;
+
+        const div = document.createElement("div");
+        div.className = "item" + (item.obtained ? " obtained" : "");
+        div.innerHTML = `
+            <div class="item-title">${item.item}</div>
+            <div class="meta">${item.area}</div>
+            <div class="${item.reveal ? "" : "hidden"}">
+                ${item.location}<br>
+                Replaces: ${item.replaces}
+            </div>
+            <button onclick="toggleReveal(${index})">Reveal</button>
+            <button onclick="toggleObtained(${index})">Obtained</button>
+        `;
+        list.appendChild(div);
+    });
+
+    const select = document.getElementById("areaFilter");
+    const currentValue = select.value;
+    select.innerHTML = '<option value="">All Areas</option>';
+    [...areas].sort().forEach(area => {
+        select.innerHTML += `<option value="${area}">${area}</option>`;
+    });
+    select.value = currentValue;
+}
+
+function toggleReveal(i) {
+    items[i].reveal = !items[i].reveal;
+    save();
+    render();
+}
+
+function toggleObtained(i) {
+    items[i].obtained = !items[i].obtained;
+    save();
+    render();
+}
+
+document.getElementById("fileInput").addEventListener("change", function() {
+    loadFile(this.files[0]);
+});
+document.getElementById("search").addEventListener("input", render);
+document.getElementById("areaFilter").addEventListener("change", render);
+document.getElementById("clearData").addEventListener("click", function() {
+    localStorage.removeItem("ashenLogItems");
+    items = [];
+    render();
+    setStatus("Cleared.");
+});
+
+render();
+</script>
+
+</body>
+</html>
