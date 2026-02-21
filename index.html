@@ -176,13 +176,24 @@ function loadFile(file) {
 
     const reader = new FileReader();
 reader.onload = function(e) {
-    const text = e.target.result;
+        try {
+            setStatus("Parsing log...");
+            const result = parseLog(e.target.result);
 
-    // Show first 500 characters inside error box
-    showError("First 500 characters of file:\n\n" + text.substring(0, 500));
+            if (!result.length) {
+                showError("Parsing completed but 0 items were detected.\n\nThe log format may not match expected structure.");
+                setStatus("No items loaded.");
+                return;
+            }
 
-    setStatus("Debug: showing raw file preview.");
-};
+            items = result;
+            save();
+            render();
+            setStatus("Loaded " + items.length + " items successfully.");
+        } catch (err) {
+            showError("Unexpected error:\n" + err.message);
+        }
+    };
 
     reader.onerror = function() {
         showError("File could not be read.");
