@@ -114,45 +114,50 @@ function save() {
 function parseLog(text) {
     const lines = text.split(/\r?\n/);
     const parsed = [];
-    let currentItem = null;
+    let section = "";
 
     for (let rawLine of lines) {
         const line = rawLine.trim();
         if (!line) continue;
 
-        // Match lines that contain " in " and end with ":"
-        if (line.includes(" in ") && line.endsWith(":")) {
-
-            const parts = line.slice(0, -1).split(" in ");
-            if (parts.length >= 2) {
-                const itemName = parts[0].trim();
-                const areaName = parts.slice(1).join(" in ").trim();
-
-                currentItem = {
-                    item: itemName,
-                    area: areaName,
-                    location: "",
-                    replaces: "",
-                    obtained: false,
-                    reveal: false
-                };
-                continue;
-            }
-        }
-
-        if (currentItem && line.startsWith("Replaces")) {
-            currentItem.replaces = line
-                .replace("Replaces", "")
-                .replace(".", "")
-                .trim();
-
-            parsed.push(currentItem);
-            currentItem = null;
+        // Detect section headers
+        if (line.startsWith("===")) {
+            section = line.replace(/=/g, "").trim();
             continue;
         }
 
-        if (currentItem) {
-            currentItem.location += line + " ";
+        // ITEM LOCATIONS: Area - Item
+        if (section.includes("Item")) {
+            if (line.includes(" - ")) {
+                const parts = line.split(" - ");
+                if (parts.length >= 2) {
+                    parsed.push({
+                        item: parts.slice(1).join(" - ").trim(),
+                        area: parts[0].trim(),
+                        location: "",
+                        replaces: "",
+                        obtained: false,
+                        reveal: false
+                    });
+                }
+            }
+        }
+
+        // BOSS LOCATIONS: Boss -> Area
+        if (section.includes("Boss")) {
+            if (line.includes("->")) {
+                const parts = line.split("->");
+                if (parts.length === 2) {
+                    parsed.push({
+                        item: parts[0].trim(), // boss name
+                        area: parts[1].trim(),
+                        location: "Boss",
+                        replaces: "",
+                        obtained: false,
+                        reveal: false
+                    });
+                }
+            }
         }
     }
 
